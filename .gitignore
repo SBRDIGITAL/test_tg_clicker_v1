@@ -316,7 +316,7 @@ cython_debug/
 # loggs files
 *.log
 
-*.png
+# *.png
 *.jpg
 *.csv
 *.zip
