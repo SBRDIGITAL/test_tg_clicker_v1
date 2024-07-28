@@ -1,0 +1,308 @@
+from contextlib import asynccontextmanager
+from traceback import print_exc
+
+import uvicorn
+
+import aiosqlite
+
+from fastapi import FastAPI, HTTPException
+
+from pydantic import BaseModel
+from fastapi.staticfiles import StaticFiles
+
+
+
+app = FastAPI()
+
+DATABASE = "scores.db"
+
+class Score(BaseModel):
+    score: int
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Start up
+    async with aiosqlite.connect(DATABASE) as db:
+        await db.execute("""
+        CREATE TABLE IF NOT EXISTS scores (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            score INTEGER NOT NULL
+        )
+        """)
+        await db.commit()
+    yield
+    # Clean up
+    # Add any cleanup code here if necessary
+
+app.router.lifespan_context = lifespan
+
+@app.get("/score")
+async def get_score():
+    async with aiosqlite.connect(DATABASE) as db:
+        async with db.execute("SELECT score FROM scores ORDER BY id DESC LIMIT 1") as cursor:
+            row = await cursor.fetchone()
+            if row:
+                return {"score": row[0]}
+            return {"score": 0}
+
+@app.post("/score")
+async def update_score(score: Score):
+    async with aiosqlite.connect(DATABASE) as db:
+        await db.execute("INSERT INTO scores (score) VALUES (?)", (score.score,))
+        await db.commit()
+        return score
+
+# Mount static files
+app.mount("/", StaticFiles(directory="src", html=True), name="static")
+
+if __name__ == "__main__":
+    # https://chatgpt.com/share/9fbc8200-5f5d-47e6-a9f7-5cdeb6eee837
+    try:
+        uvicorn.run(app, host="0.0.0.0", port=8000)
+    except:
+        print_exc()
+
+'''
+Чтобы получить Telegram ID пользователя при запуске веб-приложения внутри Telegram, вы можете использовать встроенный в Telegram метод для открытия веб-страниц с передачей информации о пользователе.
+
+Telegram предоставляет способ для передачи параметров в веб-приложение через встроенный бот. Один из подходов заключается в использовании функции Login Widget.
+
+Шаги для интеграции Telegram и веб-приложения:
+Создание Telegram бота и получение токена: Если у вас еще нет Telegram бота, создайте его и получите токен с помощью BotFather.
+
+Настройка веб-приложения для приема параметров: Обновите ваш код app.js для получения telegram_id через параметры URL.
+
+Использование Login Widget в Telegram: Используйте Telegram Login Widget для передачи информации о пользователе в ваше веб-приложение.
+
+Обновление frontend (app.js)
+Измените app.js, чтобы получать telegram_id через URL-параметры:
+
+javascript
+Копировать код
+const $circle = document.querySelector('#circle');
+const $score = document.querySelector('#score');
+
+// Function to get query parameter from URL
+function getQueryParam(param) {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.get(param);
+}
+
+// Get telegram_id from URL
+const userId = getQueryParam('telegram_id');
+localStorage.setItem('user_id', userId);
+
+async function fetchScore() {
+    const response = await fetch(`/score/${userId}`);
+    const data = await response.json();
+    return data.score;
+}
+
+async function updateScoreOnServer(score) {
+    await fetch('/score', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ user_id: userId, score }),
+    });
+}
+
+async function start() {
+    const score = await fetchScore();
+    setScore(score);
+    setImage();
+}
+
+function setScore(score) {
+    localStorage.setItem('score', score);
+    $score.textContent = score;
+}
+
+function setImage() {
+    if (getScore() >= 50) {
+        $circle.setAttribute('src', './assets/lizzard.png');
+    }
+}
+
+function getScore() {
+    return Number(localStorage.getItem('score')) ?? 0;
+}
+
+async function addOne() {
+    const newScore = getScore() + 1;
+    setScore(newScore);
+    await updateScoreOnServer(newScore);
+    setImage();
+}
+
+$circle.addEventListener('click', async (event) => {
+    const rect = $circle.getBoundingClientRect();
+
+    const offfsetX = event.clientX - rect.left - rect.width / 2;
+    const offfsetY = event.clientY - rect.top - rect.height / 2;
+
+    const DEG = 40;
+
+    const tiltX = (offfsetY / rect.height) * DEG;
+    const tiltY = (offfsetX / rect.width) * -DEG;
+
+    $circle.style.setProperty('--tiltX', `${tiltX}deg`);
+    $circle.style.setProperty('--tiltY', `${tiltY}deg`);
+
+    setTimeout(() => {
+        $circle.style.setProperty('--tiltX', `0deg`);
+        $circle.style.setProperty('--tiltY', `0deg`);
+    }, 300);
+
+    const plusOne = document.createElement('div');
+    plusOne.classList.add('plus-one');
+    plusOne.textContent = '+1';
+    plusOne.style.left = `${event.clientX - rect.left}px`;
+    plusOne.style.top = `${event.clientY - rect.top}px`;
+
+    $circle.parentElement.appendChild(plusOne);
+
+    await addOne();
+
+    setTimeout(() => {
+        plusOne.remove();
+    }, 2000);
+});
+
+start();
+Обновление backend (main.py)
+python
+Копировать код
+from contextlib import asynccontextmanager
+from traceback import print_exc
+import uvicorn
+import aiosqlite
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from fastapi.staticfiles import StaticFiles
+
+app = FastAPI()
+
+DATABASE = "scores.db"
+
+class Score(BaseModel):
+    user_id: str
+    score: int
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with aiosqlite.connect(DATABASE) as db:
+        await db.execute("""
+        CREATE TABLE IF NOT EXISTS scores (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            score INTEGER NOT NULL,
+            UNIQUE(user_id)
+        )
+        """)
+        await db.commit()
+    yield
+
+app.router.lifespan_context = lifespan
+
+@app.get("/score/{user_id}")
+async def get_score(user_id: str):
+    async with aiosqlite.connect(DATABASE) as db:
+        async with db.execute("SELECT score FROM scores WHERE user_id = ? ORDER BY id DESC LIMIT 1", (user_id,)) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                return {"score": row[0]}
+            return {"score": 0}
+
+@app.post("/score")
+async def update_score(score: Score):
+    async with aiosqlite.connect(DATABASE) as db:
+        await db.execute("INSERT OR REPLACE INTO scores (user_id, score) VALUES (?, ?)", (score.user_id, score.score))
+        await db.commit()
+        return score
+
+app.mount("/", StaticFiles(directory="src", html=True), name="static")
+
+if __name__ == "__main__":
+    try:
+        uvicorn.run(app, host="0.0.0.0", port=8000)
+    except:
+        print_exc()
+Шаг 3: Использование Telegram Login Widget
+Вы можете использовать Telegram Login Widget для автоматической передачи telegram_id пользователя в ваше веб-приложение. Сначала вам нужно зарегистрировать ваш домен в BotFather:
+
+Откройте BotFather в Telegram и используйте команду /setdomain для вашего бота.
+Следуйте инструкциям для регистрации вашего домена.
+Затем добавьте Telegram Login Widget на вашу страницу:
+
+Обновление index.html
+html
+Копировать код
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lizzard Clicker</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="game">
+      <div class="header">
+        <img src="./assets/coin.png" alt="coin" />
+        <h2 class="score" id="score">42</h2>
+      </div>
+      <div class="circle">
+        <img id="circle" src="./assets/frog.png" alt="frog" />
+      </div>
+    </div>
+
+    <!-- Telegram Login Widget -->
+    <script async src="https://telegram.org/js/telegram-widget.js?9" data-telegram-login="YOUR_BOT_USERNAME" data-size="large" data-userpic="false" data-auth-url="http://yourdomain.com/auth" data-request-access="write"></script>
+    
+    <script src="app.js" defer></script>
+  </body>
+</html>
+Шаг 4: Обработка Telegram Login Widget
+Создайте новый маршрут /auth в FastAPI для обработки данных, полученных от Telegram Login Widget, и перенаправления пользователя на основную страницу с telegram_id.
+
+Обновление main.py
+python
+Копировать код
+from fastapi import Request
+from fastapi.responses import RedirectResponse
+import hmac
+import hashlib
+import base64
+
+TOKEN = "YOUR_BOT_TOKEN"  # Ваш токен бота
+
+# Вспомогательная функция для проверки подлинности данных от Telegram
+def check_telegram_auth(data: dict, token: str) -> bool:
+    check_hash = data.pop('hash')
+    data_check_string = "\n".join([f"{k}={v}" for k, v in sorted(data.items())])
+    secret_key = hashlib.sha256(token.encode()).digest()
+    hmac_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(hmac_hash, check_hash)
+
+@app.get("/auth")
+async def auth(request: Request):
+    data = dict(request.query_params)
+    if check_telegram_auth(data, TOKEN):
+        telegram_id = data['id']
+        return RedirectResponse(url=f"/?telegram_id={telegram_id}")
+    else:
+        return HTTPException(status_code=403, detail="Unauthorized")
+
+if __name__ == "__main__":
+    try:
+        uvicorn.run(app, host="0.0.0.0", port=8000)
+    except:
+        print_exc()
+Итоговая структура проекта
+app.js: Обрабатывает telegram_id из URL-параметров и обновляет счет на сервере.
+main.py: Обрабатывает запросы от фронтенда, включая аутентификацию через Telegram Login Widget.
+index.html: Содержит Telegram Login Widget для автоматической передачи данных пользователя в веб-приложение.
+Теперь при запуске веб-приложения внутри Telegram, Telegram Login Widget передаст telegram_id пользователя, и ваш backend обработает его для взаимодействия с фронтендом.
+'''
