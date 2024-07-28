@@ -38,6 +38,7 @@ app.router.lifespan_context = lifespan
 
 @app.get("/score")
 async def get_score():
+    """ ## Получение очков из базы данных """
     async with aiosqlite.connect(DATABASE) as db:
         async with db.execute("SELECT score FROM scores ORDER BY id DESC LIMIT 1") as cursor:
             row = await cursor.fetchone()
@@ -47,6 +48,7 @@ async def get_score():
 
 @app.post("/score")
 async def update_score(score: Score):
+    """ ## Обновление очков """
     async with aiosqlite.connect(DATABASE) as db:
         await db.execute("INSERT INTO scores (score) VALUES (?)", (score.score,))
         await db.commit()

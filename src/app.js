@@ -8,6 +8,8 @@ async function fetchScore() {
 }
 
 async function updateScoreOnServer(score) {
+  // Обращается к методу @app.post("/score") async def update_score(score: Score):
+  // Обновление очков в БД
   await fetch('/score', {
     method: 'POST',
     headers: {
@@ -18,27 +20,32 @@ async function updateScoreOnServer(score) {
 }
 
 async function start() {
+  // Запускает функции при открытии веб страницы
   const score = await fetchScore()
   setScore(score)
   setImage()
 }
 
 function setScore(score) {
+  // Устанавливает настоящее количество очков в localStorage
   localStorage.setItem('score', score)
   $score.textContent = score
 }
 
 function setImage() {
+  // Заменяет изображение если очков больше чем 50
   if (getScore() >= 50) {
     $circle.setAttribute('src', './assets/lizzard.png')
   }
 }
 
 function getScore() {
+  // Получает очки из localStorage (по умолчанию 0)
   return Number(localStorage.getItem('score')) ?? 0
 }
 
 async function addOne() {
+  // Обновляет информацию об очка при нажатии на кликер
   const newScore = getScore() + 1
   setScore(newScore)
   await updateScoreOnServer(newScore)
@@ -46,6 +53,7 @@ async function addOne() {
 }
 
 $circle.addEventListener('click', async (event) => {
+  // Слушает событие клика на изображение, работает с анимацей, вызывает обновление очков
   const rect = $circle.getBoundingClientRect()
 
   const offfsetX = event.clientX - rect.left - rect.width / 2
